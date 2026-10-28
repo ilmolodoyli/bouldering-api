@@ -1,0 +1,72 @@
+import {emptyResult,applyAction,validate,keyOf,Api} from './core.mjs';
+const $=document.querySelector('#app'),api=new Api();
+const demoPeople=[{id:1,full_name:'Анна Крылова',age:24,category:'Женщины'},{id:2,full_name:'Дмитрий Соколов',age:27,category:'Мужчины'},{id:3,full_name:'Елена Миронова',age:22,category:'Женщины'},{id:4,full_name:'Иван Петров',age:25,category:'Мужчины'},{id:5,full_name:'Мария Орлова',age:21,category:'Женщины'},{id:6,full_name:'Сергей Ким',age:30,category:'Мужчины'}];
+const demoRoutes=[1,3,5,7].map(id=>({id,difficulty:'6b',age_category:'Взрослые'}));
+const state={mode:null,tab:'tournament',routes:[],people:[],chosen:[],draft:[],route:null,results:{},history:[],sheet:null,q:'',error:'',ready:false,busy:false,storageError:false};
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function persist(next){try{localStorage.setItem('bouldering_training_v3',JSON.stringify(next));state.storageError=false;return true;}catch{state.storageError=true;state.error='Не удалось сохранить на устройстве. Действие не применено.';return false;}}
+function enter(mode){state.mode=mode;state.error='';state.sheet=null;state.tab='tournament';state.q='';state.results={};state.chosen=[];state.ready=false;
+ if(mode==='training'){state.people=demoPeople;state.routes=demoRoutes;try{const s=JSON.parse(localStorage.getItem('bouldering_training_v3')||'null');if(s&&s.version===3){for(const r of Object.values(s.results||{}))validate(r);state.results=s.results||{};state.history=s.history||[];state.chosen=(s.chosen||[]).filter(id=>demoRoutes.some(r=>r.id===id));}}catch{state.error='Локальная история повреждена. Счёт не будет обнулён молча.';state.mode=null;render();return;}state.ready=state.chosen.length>=2;state.route=state.chosen[0];state.draft=[...state.chosen];render();}
+ else loadLive();
+}
+async function loadLive(){state.busy=true;render();try{const [routes,people]=await Promise.all([api.list('/routes/'),api.list('/competitors/')]);state.routes=routes;state.people=people;state.ready=false;}catch(e){state.error='Не удалось загрузить API. '+e.message;}finally{state.busy=false;render();}}
+function current(id){return state.results[`${state.route}:${id}`]||emptyResult(id,state.route);}
+function save(r,kind){validate(r);const old=current(r.competitor_id);const results={...state.results,[keyOf(r)]:r};const history=[...state.history,{time:new Date().toISOString(),kind,before:old,after:r}];if(!persist({version:3,results,history,chosen:state.chosen})){render();return;}state.results=results;state.history=history;state.sheet=null;state.error='';render();}
+function open(id){if(state.mode!=='training')return;state.error='';state.sheet={id,edit:!!current(id).top_attempt,tmp:{...current(id)}};render();}
+function action(a){if(!state.sheet||state.mode!=='training')return;try{save(applyAction(current(state.sheet.id),a),a);}catch(e){state.error=e.message;render();}}
+function commitEdit(){try{save({...state.sheet.tmp},'correction');}catch(e){state.error=e.message;render();}}
+function rows(){const list=state.people.filter(p=>(p.full_name+' '+p.id).toLowerCase().includes(state.q.toLowerCase()));return [...list.filter(p=>!current(p.id).top_attempt),...list.filter(p=>current(p.id).top_attempt)].map(p=>{const r=state.mode==='training'?current(p.id):null;return `<button class="athlete ${r?.top_attempt?'done':''}" data-open="${p.id}" ${state.mode!=='training'?'disabled':''}><span class="no">${p.id}</span><strong>${esc(p.full_name)}</strong><small>${r?`Попыток ${r.total_attempt} · зона ${r.zone_attempt||'не взята'} · топ ${r.top_attempt||'не взят'} <span class="good">${r.top_attempt?'Завершил':''}</span>`:'Результат неизвестен: API не отдаёт сохранённый счёт'}</small></button>`;}).join('')||'<p class="empty">Участников не найдено</p>';}
+function picker(){return `<h2>Мои трассы</h2><p class="sub">Выберите 2–3 трассы. ${state.mode==='training'?'Выбор хранится только на этом устройстве.':'В API пока нет сохранения выбора судьи.'}</p>${state.routes.map(r=>`<label class="pick"><input type="checkbox" data-pick="${r.id}" ${state.draft.includes(r.id)?'checked':''}><span><b>Трасса ${r.id}</b><br><small>${esc(r.difficulty)} · ${esc(r.age_category)}</small></span></label>`).join('')||'<p class="empty">Сервер вернул пустой список трасс.</p>'}<button id="confirm" class="primary full" ${state.draft.length<2||state.draft.length>3?'disabled':''}>Открыть ${state.mode==='training'?'тренировку':'список участников'}</button>`;}
+function modal(){const p=state.people.find(x=>x.id===state.sheet.id),r=state.sheet.tmp;return `<div class="overlay"><section class="sheet" role="dialog" aria-modal="true" aria-label="${state.sheet.edit?'Исправление':'Быстрый ввод'}"><strong>${esc(p.full_name)}</strong><p class="sub">Трасса ${state.route} · ${state.sheet.edit?'исправление':'быстрый ввод'}</p>${state.sheet.edit?`<div class="stats">${[['total_attempt','всего попыток'],['zone_attempt','зона: на попытке'],['top_attempt','топ: на попытке']].map(([k,label])=>`<div><b>${r[k]||(k==='total_attempt'?'0':'-')}</b><small>${label}</small><button data-count="${k}" data-delta="-1" aria-label="Уменьшить ${label}">−</button><button data-count="${k}" data-delta="1" aria-label="Увеличить ${label}">+</button></div>`).join('')}</div><button id="save-edit" class="action primary">Сохранить исправление</button>`:`<p class="sub">Попыток ${r.total_attempt} · зона ${r.zone_attempt||'не взята'} · топ ${r.top_attempt||'не взят'}</p><button class="action" data-action="fall">Сорвался (+1 попытка)</button><button class="action" data-action="zone">Взял зону</button><button class="action primary" data-action="top" >Взял топ</button>${!r.zone_attempt?'<p class="sub">Топ запишет зону на этой же попытке, если она ещё не взята.</p>':''}<button id="edit" class="text">Исправить</button>`}<p class="error" role="alert">${esc(state.error)}</p><button id="close" class="text">Отмена</button><p class="sub">Тренировка: сохраняется на устройстве, не на сервере.</p></section></div>`;}
+function renderContent(){
+ if(!state.mode){$.innerHTML=`<header><h1>Турнир</h1><p class="sub">Судейский интерфейс · разработка</p></header><main><div class="card"><h2>Подключение</h2><p>Настоящей авторизации в API пока нет. Мы не спрашиваем пароль и не выдаём локальную роль за доступ судьи.</p><button class="full primary" id="training">Тренировка на устройстве</button><p class="sub">Вымышленные участники. Реальные кнопки и история, без записи в API.</p><button class="full" id="live">Проверить живой API</button><p class="sub">Только чтение участников и трасс. Судейство заблокировано до авторизации и чтения результатов.</p></div><p class="error">${esc(state.error)}</p></main>`;document.querySelector('#training').onclick=()=>enter('training');document.querySelector('#live').onclick=()=>enter('live');return;}
+ let body='';if(state.tab==='tournament')body=state.busy?'<p class="empty">Загрузка с API…</p>':!state.ready?picker():`<div class="routebar">${state.chosen.map(id=>`<button class="${id===state.route?'on':''}" data-route="${id}">Трасса ${id}</button>`).join('')}<button id="change" aria-label="Выбор трасс">⋯</button></div><input id="search" placeholder="Имя или номер" aria-label="Поиск участника" value="${esc(state.q)}"><div id="rows">${rows()}</div>`;
+ if(state.tab==='routes')body=`<h2>Трассы</h2>${state.routes.map(r=>`<div class="card"><strong>Трасса ${r.id}</strong><p class="sub">${esc(r.difficulty)} · ${esc(r.age_category)}</p></div>`).join('')||'<p class="empty">Трассы пока не созданы</p>'}`;
+ if(state.tab==='community')body='<h2>Сообщество</h2><p class="empty">Чаты появятся позже. Сообщения не отправляются.</p>';
+ if(state.tab==='profile')body=`<h2>${state.mode==='training'?'Локальная тренировка':'Подключение API'}</h2><div class="card"><p>${state.mode==='training'?'Это не аккаунт. Данные остаются только в браузере.':'Сервер не выдаёт роли и токены. Режим судьи пока недоступен.'}</p><p class="sub">Действий в локальной истории: ${state.mode==='training'?state.history.length:0}</p>${state.mode==='training'?'<button id="export" class="full">Скачать историю JSON</button>':'<button id="refresh" class="full">Обновить данные</button>'}</div><button id="exit" class="full">К подключению</button>`;
+ $.innerHTML=`<header><h1>Турнир</h1><p class="sub">Квалификация · ${state.mode==='training'?'тренировка, сервер не используется':'живой API, только чтение'}</p><div class="notice">${state.mode==='training'?'Локальные результаты не отправляются на сервер.':'Запись заблокирована: нет авторизации и чтения результатов.'}</div></header><main>${body}${!state.sheet?`<p class="error" role="alert">${esc(state.error)}</p>`:''}</main><nav>${[['tournament','♜','Турнир'],['community','♧','Сообщество'],['routes','♧','Трассы'],['profile','♙','Профиль']].map(([k,icon,label])=>`<button class="${state.tab===k?'on':''}" data-tab="${k}"><span>${icon}</span>${label}</button>`).join('')}</nav>${state.sheet?modal():''}`;
+ const by=id=>document.getElementById(id);const bind=(id,fn)=>{if(by(id))by(id).onclick=fn;};
+ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;state.error='';render();});
+ document.querySelectorAll('[data-route]').forEach(b=>b.onclick=()=>{state.route=Number(b.dataset.route);render();});
+ document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>open(Number(b.dataset.open)));
+ document.querySelectorAll('[data-action]').forEach(b=>b.onclick=()=>action(b.dataset.action));
+ document.querySelectorAll('[data-count]').forEach(b=>b.onclick=()=>{const r=state.sheet.tmp;r[b.dataset.count]=Math.max(0,r[b.dataset.count]+Number(b.dataset.delta));state.error='';render();});
+ document.querySelectorAll('[data-pick]').forEach(b=>b.onchange=()=>{const id=Number(b.dataset.pick);state.draft=b.checked?[...state.draft,id]:state.draft.filter(v=>v!==id);render();});
+ bind('confirm',()=>{if(state.draft.length<2||state.draft.length>3)return;if(state.mode==='training'&&!persist({version:3,results:state.results,history:state.history,chosen:state.draft}))return render();state.chosen=[...state.draft];state.route=state.chosen[0];state.ready=true;render();});
+ bind('change',()=>{state.ready=false;state.draft=[...state.chosen];render();});bind('close',()=>{state.sheet=null;state.error='';render();});bind('edit',()=>{state.sheet.edit=true;render();});bind('save-edit',commitEdit);bind('exit',()=>{state.mode=null;state.error='';render();});bind('refresh',()=>enter('live'));
+ bind('export',()=>{if(window.JudgeAndroid){window.JudgeAndroid.exportTraining(JSON.stringify({version:3,results:state.results,history:state.history},null,2));return;}const blob=new Blob([JSON.stringify({version:3,results:state.results,history:state.history},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='bouldering-training.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+ if(by('search'))by('search').oninput=e=>{state.q=e.target.value;by('rows').innerHTML=rows();document.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>open(Number(b.dataset.open)));};
+}
+// Motion never delays saving or leaves an interactive old panel behind.
+function render(){
+ const previous=$.querySelector('.overlay:not([data-exit])');
+ const oldKind=previous?.querySelector('[role="dialog"]')?.getAttribute('aria-label');
+ const returnId=previous?.dataset.returnId;
+ const active=document.activeElement;
+ const oldPanel=previous?.cloneNode(true);
+ renderContent();
+ const next=$.querySelector('.overlay');
+ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
+ const duration=reduced?0:160;
+ if(next){
+  next.dataset.returnId=state.sheet.id;
+  if(!previous||oldKind!==next.querySelector('[role="dialog"]').getAttribute('aria-label')){
+   next.animate([{opacity:0},{opacity:1}],{duration,easing:'ease-out'});
+   next.querySelector('.sheet').animate([{transform:'translateY(20px)',opacity:0},{transform:'translateY(0)',opacity:1}],{duration,easing:'cubic-bezier(.2,.8,.2,1)'});
+   next.querySelector('button:not(:disabled)')?.focus({preventScroll:true});
+  }else if(active?.dataset.count){
+   next.querySelector(`[data-count="${active.dataset.count}"][data-delta="${active.dataset.delta}"]`)?.focus({preventScroll:true});
+  }
+ }else if(oldPanel){
+  if(duration){
+   oldPanel.dataset.exit='true';oldPanel.inert=true;oldPanel.setAttribute('aria-hidden','true');
+   oldPanel.style.pointerEvents='none';oldPanel.querySelectorAll('[id]').forEach(e=>e.removeAttribute('id'));
+   oldPanel.querySelector('[role="dialog"]')?.removeAttribute('role');
+   $.append(oldPanel);
+   oldPanel.querySelector('.sheet').animate([{transform:'translateY(0)'},{transform:'translateY(16px)'}],{duration:120,easing:'ease-in'});
+   oldPanel.animate([{opacity:1},{opacity:0}],{duration:120,easing:'ease-in'}).finished.finally(()=>oldPanel.remove());
+  }
+  $.querySelector(`[data-open="${returnId}"]`)?.focus({preventScroll:true});
+ }
+}
+render();
