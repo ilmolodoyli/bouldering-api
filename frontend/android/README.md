@@ -1,26 +1,23 @@
-# Android-обёртка судейского приложения (тренировочная сборка)
+# Судейское Android-приложение 0.2.0
 
-Нативная WebView-обёртка вокруг фронтенда из `frontend/`. Внутри APK работает
-`JudgeServer` — тот же сервер, что и `serve.py`, портированный на Java и
-запущенный на самом устройстве (127.0.0.1:8781, при занятом порте — ошибка запуска без смены origin).
-Никакого внешнего десктоп-сервера приложение не требует и не эмулирует.
+Гибридный интерфейс HTML/CSS/JS внутри WebView, Java loopback-сервер на устройстве (127.0.0.1:8781). Внешний компьютер не нужен.
 
-- Статика (`index.html`, `ui.mjs`, `core.mjs`) лежит в `app/assets/` байт-в-байт
-  из `frontend/` и отдаётся локально.
-- `/api/routes/`, `/api/competitors/`, `/api/openapi.json` (только GET) проксируются
-  на живой бэкенд `https://agile-sandbag-viewless.ngrok-free.dev` с заголовком
-  `ngrok-skip-browser-warning: 1`, лимитом 2 МБ и проверкой JSON.
-- POST/PUT и все остальные endpoint'ы возвращают 403 — запись на сервер
-  заблокирована до появления авторизации и чтения результатов, как на десктопе.
-- Тренировочный режим хранит результаты в localStorage устройства и ничего
-  не отправляет на сервер.
+- Локальная тренировка, быстрые срыв/зона/топ, исправление, история и JSON-экспорт сохранены.
+- Экран имени судьи хранит имя локально. Это НЕ авторизация и не подтверждение прав: сервер не принимает имя судьи/токен.
+- Серверные списки участников и трасс читаются GET-запросами.
+- Регистрация: ФИО, возраст, категория; отдельный просмотр данных и подтверждение POST /competitors/. Успех показывается только после проверки ответа и повторного чтения списка. При неопределённом исходе нет автоматического повтора, нужно проверить список.
+- GET /results/ теперь объявлен сервером, но при проверке 29.10.2026 возвращает HTTP500. Счёт неизвестен и не заменяется нулями. Экран результата показывает поля, но POST /results/ остаётся заблокирован в UI и Java-прокси. Нужны рабочее чтение исходного результата и серверная защита от конкурирующей перезаписи; имя не заменяет настоящую авторизацию.
 
-Сборка: `./build.sh keystore.jks` (нужны JDK 17+, build-tools 34, platform android-34).
-Тесты сервера: `app/test/ServerTest.java` (JVM, мок-бэкенд + живой API),
-UI-прогон через headless Chrome описан в истории проверок.
+Прокси разрешает GET /routes/, /competitors/, /results/, /openapi.json. Только POST /competitors/ разрешён с same-origin Origin и явным X-Judge-Action. Другие записи закрыты. Лимит ответа2МБ, таймаут12с; API https://agile-sandbag-viewless.ngrok-free.dev . Никаких вымышленных данных на живой сервер при разработке не отправлено.
 
-Пакет `dev.bouldering.judge`, minSdk 26, targetSdk 34, versionCode 1 (0.1.0).
-Ключ подписи в репозиторий не входит.
+## Сборка
+JDK17+, Android build-tools34, platform android-34, zip/base64. Из frontend/android:
 
+```sh
+BUILD_TOOLS=/path/build-tools/34 PLATFORM=/path/platforms/android-34/android.jar KS_PASS=... bash build.sh /absolute/path/signing.jks
+```
 
-Android installation and launch are NOT verified yet. Local software emulator crashes before boot, and no physical Android device is attached. The APK is a candidate, not a ready delivery. Chrome screenshots are web UI evidence only, not Android screenshots. Native export uses the Android document picker and remains unverified on-device. Stable fixed port preserves localStorage across restarts. Navigation is restricted to the local origin, file/content access disabled, backup disabled. Signing material lives only in a separate private owner Drive archive and is excluded from this source backup.
+Секреты и APK не хранятся в репозитории. Значения секрета не копировать в команды с включённым shell tracing. Пакет dev.bouldering.judge, versionCode2, minSdk26/targetSdk34.
+
+## Проверка и ограничения
+0.1.0: пользователь прислал согласованный экспорт39действий на12результатов и общий положительный отзыв. Скриншота интерфейса после перезапуска нет. Новые экраны0.2.0 проверены в Chrome с контролируемым API и Java-прокси с изолированным mock-сервером. Реальная регистрация на сервере и Android-запуск0.2.0 ещё не проверены. Это тестовая сборка, не готовая система соревнований. Подтверждённый POST создаёт настоящего участника: используйте только реальные разрешённые данные.
