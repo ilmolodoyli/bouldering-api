@@ -174,7 +174,7 @@ public final class ServerTest {
             check("ngrok skip header sent", backend.sawSkipHeader, "header missing");
             check("api is no-store", routes.headers.toLowerCase().contains("cache-control: no-store"), routes.headers);
 
-            Response notAllowed = request(port, "GET", "/api/results/");
+            Response notAllowed = request(port, "GET", "/api/not-enabled/");
             check("non-allowlisted endpoint 403", notAllowed.code == 403, "code=" + notAllowed.code);
 
             Response post = request(port, "POST", "/api/results/");
