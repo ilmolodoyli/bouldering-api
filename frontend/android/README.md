@@ -1,6 +1,6 @@
-# Судейское Android-приложение 0.3.0
+# Судейское Android-приложение 0.4.0
 
-HTML/CSS/JS внутри WebView, Java loopback-сервер127.0.0.1:8781 на самом устройстве. Компьютер для запуска не нужен. Пакет dev.bouldering.judge/versionCode4, minSdk26/targetSdk34.
+HTML/CSS/JS внутри WebView, Java loopback-сервер127.0.0.1:8781 на самом устройстве. Компьютер для запуска не нужен. Пакет dev.bouldering.judge/versionCode5, minSdk26/targetSdk34.
 
 ## Что работает в этой итерации
 - Имя судьи локальное, НЕ защищённая авторизация.
@@ -26,3 +26,18 @@ BUILD_TOOLS=/path/build-tools/34 PLATFORM=/path/platforms/android-34/android.jar
 
 ## Проверка
 Изолированные mock-тесты: подтверждение создания трассы POST1+GET; unsupported delete0; интерактивный срыв+топ2/2/2; локальная история переживает reload; scorePOST0. UI просмотрен390px. Java компилируется Android34. Сборка подписана прежним ключом. Native0.3.0 и реальное создание трассы пока не проверены. Положительный отзыв/экспорт пользователя относятся к0.1.0, а не новой сборке.
+
+## 0.4.0: тестовый native APK updater
+
+Кнопка «Обновления приложения» открывает native-диалог. Проверка фиксированного публичного GitHub Releases тестового канала, а не /latest (он исключает prerelease). Проверяется размер, SHA256 GitHub asset, package, строго больший versionCode, versionName и тот же набор сертификатов. APK загружается в закрытый cache, после передачи Android удаляется. Redirect только HTTPS на GitHub/CDN. При ошибке данные приложения не очищаются. Нет удалённой подмены web-assets.
+
+Автообновление выключено по умолчанию. После включения проверка только при открытии приложения, не чаще 6 часов. Установка откладывается, если открыт рабочий экран. Ручная проверка доступна в любой момент; перед установкой предупреждает о закрытии приложения и предлагает экспортировать важную историю.
+
+Первая установка 0.4.0 вручную. Разрешение Android на установку из этого источника требуется отдельно. На API31+ запрашивается USER_ACTION_NOT_REQUIRED для self-update. Android/OEM может вернуть STATUS_PENDING_USER_ACTION: открываем настоящее системное подтверждение, не утверждаем успех. На старых Android подтверждение остаётся. Root/admin/security bypass не используется.
+
+Одинаковый package/signing key, fixed WebView origin и ключи localStorage сохраняются. Нет uninstall/clear-data. Native запуск/диалог/реальная установка 0.4.0 на телефоне ещё НЕ проверены. Проверены компиляция, подпись, discovery/download/hash и браузерная кнопка. Живой score sync/CRUD ограничения предыдущей версии сохраняются.
+
+Официальные правила:
+https://developer.android.com/reference/android/content/pm/PackageInstaller.SessionParams
+https://developer.android.com/google/play/app-updates
+https://docs.github.com/en/rest/releases/releases
