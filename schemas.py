@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
+from typing import Optional
 # схемы — это мой жесткий фейсконтроль. 
 # они проверяют, чтобы фронт прислал мне правильный json, а не какую-то дичь.
 # если данные кривые, сервак сам отобьет запрос еще до базы.
@@ -32,8 +33,14 @@ class ResultCreate(BaseModel):
     competitor_id: int
     route_id: int
     total_attempt: int = 0
-    zone_attempt: int = 0
-    top_attempt: int = 0
+    zone_attempt: Optional[int] = None
+    top_attempt: Optional[int] = None
+    @model_validator(mode='after')
+    def auto_fill_zone_if_top_reached(self):
+        if self.top_attempt and self.top_attempt > 0:
+            if not self.zone_attempt or self.zone_attempt == 0:
+                self.zone_attempt or self.zone_attempt
+        return self
 # отдаю сохраненный результат обратно, чтобы фронт понял, что всё записалось
 class ResultResponse(ResultCreate):
     id: int
