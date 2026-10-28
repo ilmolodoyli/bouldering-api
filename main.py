@@ -60,6 +60,10 @@ def create_route(route: schemas.RouteCreate, db: Session = Depends(get_db)):
 def read_routes(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     routes = db.query(models.Route).offset(skip).limit(limit).all()
     return routes 
+# получение списков всех результатов
+@app.get("/results/", response_model=list[schemas.ResultResponse])
+def read_results(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+    return db.query(models.Result).offset(skip).limit(limit).all()
 # резултат соревнований
 # главный маршрут для судьи, сохранение или обновление попыток
 @app.post("/results/", response_model=schemas.ResultResponse)
