@@ -36,7 +36,7 @@ public final class JudgeServer {
     public static final String DEFAULT_BASE = "https://agile-sandbag-viewless.ngrok-free.dev";
     public static final int PREFERRED_PORT = 8781;
     private static final Set<String> READ_ENDPOINTS =
-            new HashSet<>(Arrays.asList("/routes/", "/competitors/", "/openapi.json"));
+            new HashSet<>(Arrays.asList("/routes/", "/competitors/", "/results/", "/openapi.json"));
     private static final int MAX_API_BYTES = 2_000_000;
     private static final int TIMEOUT_MS = 12_000;
     private static final int MAX_HEADER_BYTES = 16_384;
@@ -114,15 +114,28 @@ public final class JudgeServer {
             String target = parts[1];
             // Consume headers; only Content-Length matters (to drain a body we reject anyway).
             int contentLength = 0;
+            boolean registerHeader = false;
+            String origin = null;
             String line;
             while ((line = readLine(in)) != null && !line.isEmpty()) {
                 int colon = line.indexOf(':');
+                if (colon > 0 && line.substring(0,colon).equalsIgnoreCase("X-Judge-Action")) registerHeader = "register-competitor".equals(line.substring(colon+1).trim());
+                if (colon > 0 && line.substring(0,colon).equalsIgnoreCase("Origin")) origin = line.substring(colon+1).trim();
                 if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("Content-Length")) {
                     try { contentLength = Integer.parseInt(line.substring(colon + 1).trim()); }
                     catch (NumberFormatException ignored) {}
                 }
             }
-            if (contentLength > 0) skipFully(in, contentLength);
+            if ("POST".equals(method) && target.equals("/api/competitors/")) {
+                if (!registerHeader || !("http://127.0.0.1:" + port()).equals(origin) || contentLength < 1 || contentLength > 8192) {
+                    respond(out,403,"text/plain","Registration requires same-origin explicit action",null);return;
+                }
+                byte[] body = new byte[contentLength]; int read=0;
+                while(read<contentLength){int n=in.read(body,read,contentLength-read);if(n<0)throw new EOFException();read+=n;}
+                if(!JsonCheck.isValid(new String(body,StandardCharsets.UTF_8))){respond(out,400,"text/plain","Invalid JSON",null);return;}
+                register(body,out);return;
+            }
+            if (contentLength > 0) skipFully(in, Math.min(contentLength,8192));
             handle(method, target, out);
         } catch (IOException ignored) {
             // Client went away mid-request; nothing useful to send.
@@ -171,6 +184,24 @@ public final class JudgeServer {
         } catch (Exception e) {
             respond(out, 502, "text/plain; charset=utf-8", "Backend not reachable or invalid JSON", null);
         }
+    }
+
+    private void register(byte[] body, OutputStream out) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection)new URL(base+"/competitors/").openConnection();
+        conn.setInstanceFollowRedirects(false);
+        conn.setRequestMethod("POST");conn.setDoOutput(true);
+        conn.setConnectTimeout(TIMEOUT_MS);conn.setReadTimeout(TIMEOUT_MS);
+        conn.setRequestProperty("Content-Type","application/json");
+        conn.setRequestProperty("ngrok-skip-browser-warning","1");
+        try {
+            try(OutputStream stream=conn.getOutputStream()){stream.write(body);}
+            int code=conn.getResponseCode();
+            InputStream stream=code>=400?conn.getErrorStream():conn.getInputStream();
+            byte[] data=stream==null?new byte[0]:readCapped(stream,MAX_API_BYTES+1);
+            if(code<200||code>=300||data.length>MAX_API_BYTES||!JsonCheck.isValid(new String(data,StandardCharsets.UTF_8)))throw new IOException();
+            respond(out,200,"application/json",data,"no-store");
+        }catch(Exception e){respond(out,502,"text/plain","Registration outcome unknown; refresh list before retry",null);}
+        finally{conn.disconnect();}
     }
 
     private byte[] fetchApi(String pathAndQuery) throws IOException {
