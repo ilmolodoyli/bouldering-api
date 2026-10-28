@@ -101,7 +101,7 @@ public class MainActivity extends Activity {
     @Override
     public void onBackPressed() {
         if (web == null) { super.onBackPressed(); return; }
-        web.evaluateJavascript("(() => {const b=document.querySelector('#close');if(b){b.click();return true;}return false;})()", value -> {
+        web.evaluateJavascript("(() => {const b=document.querySelector('#close,#close-quick,#close-manage');if(b){b.click();return true;}return false;})()", value -> {
             if (!"true".equals(value)) finish();
         });
     }
@@ -139,4 +139,4 @@ public class MainActivity extends Activity {
         if (web != null) web.destroy();
         super.onDestroy();
     }
-}
+    }
