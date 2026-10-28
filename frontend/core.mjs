@@ -9,10 +9,9 @@ export function validate(r){
 export function applyAction(previous,action){
  const r={...validate(previous)};if(r.top_attempt)throw Error('Трасса завершена. Используйте исправление');
  if(!['fall','zone','top'].includes(action))throw Error('Неизвестное действие');
- if(action==='top'&&!r.zone_attempt)throw Error('Топ без ранее взятой зоны: правило не согласовано. Используйте исправление с фактическими значениями');
  r.total_attempt++;
  if(action==='zone'&&!r.zone_attempt)r.zone_attempt=r.total_attempt;
- if(action==='top')r.top_attempt=r.total_attempt;
+ if(action==='top'){r.top_attempt=r.total_attempt;if(!r.zone_attempt)r.zone_attempt=r.total_attempt;}
  return validate(r);
 }
 export const keyOf=r=>`${r.route_id}:${r.competitor_id}`;
