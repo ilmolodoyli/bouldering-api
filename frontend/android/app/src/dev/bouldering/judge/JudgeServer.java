@@ -114,26 +114,26 @@ public final class JudgeServer {
             String target = parts[1];
             // Consume headers; only Content-Length matters (to drain a body we reject anyway).
             int contentLength = 0;
-            boolean registerHeader = false;
+            String registerHeader = "";
             String origin = null;
             String line;
             while ((line = readLine(in)) != null && !line.isEmpty()) {
                 int colon = line.indexOf(':');
-                if (colon > 0 && line.substring(0,colon).equalsIgnoreCase("X-Judge-Action")) registerHeader = "register-competitor".equals(line.substring(colon+1).trim());
+                if (colon > 0 && line.substring(0,colon).equalsIgnoreCase("X-Judge-Action")) registerHeader = line.substring(colon+1).trim();
                 if (colon > 0 && line.substring(0,colon).equalsIgnoreCase("Origin")) origin = line.substring(colon+1).trim();
                 if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("Content-Length")) {
                     try { contentLength = Integer.parseInt(line.substring(colon + 1).trim()); }
                     catch (NumberFormatException ignored) {}
                 }
             }
-            if ("POST".equals(method) && target.equals("/api/competitors/")) {
-                if (!registerHeader || !("http://127.0.0.1:" + port()).equals(origin) || contentLength < 1 || contentLength > 8192) {
+            if ("POST".equals(method) && (target.equals("/api/competitors/") || target.equals("/api/routes/"))) {
+                if (!(target.equals("/api/competitors/")?"register-competitor":"create-route").equals(registerHeader) || !("http://127.0.0.1:" + port()).equals(origin) || contentLength < 1 || contentLength > 8192) {
                     respond(out,403,"text/plain","Registration requires same-origin explicit action",null);return;
                 }
                 byte[] body = new byte[contentLength]; int read=0;
                 while(read<contentLength){int n=in.read(body,read,contentLength-read);if(n<0)throw new EOFException();read+=n;}
                 if(!JsonCheck.isValid(new String(body,StandardCharsets.UTF_8))){respond(out,400,"text/plain","Invalid JSON",null);return;}
-                register(body,out);return;
+                register(target.substring(4),body,out);return;
             }
             if (contentLength > 0) skipFully(in, Math.min(contentLength,8192));
             handle(method, target, out);
@@ -186,8 +186,8 @@ public final class JudgeServer {
         }
     }
 
-    private void register(byte[] body, OutputStream out) throws IOException {
-        HttpURLConnection conn = (HttpURLConnection)new URL(base+"/competitors/").openConnection();
+    private void register(String endpoint, byte[] body, OutputStream out) throws IOException {
+        HttpURLConnection conn = (HttpURLConnection)new URL(base+endpoint).openConnection();
         conn.setInstanceFollowRedirects(false);
         conn.setRequestMethod("POST");conn.setDoOutput(true);
         conn.setConnectTimeout(TIMEOUT_MS);conn.setReadTimeout(TIMEOUT_MS);
@@ -415,4 +415,4 @@ public final class JudgeServer {
             }
         }
     }
-}
+    }
