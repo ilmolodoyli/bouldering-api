@@ -28,6 +28,7 @@ import java.io.InputStream;
  */
 public class MainActivity extends Activity {
     private static final int BG = Color.rgb(0x0b, 0x0c, 0x0d);
+    private AppUpdater updater;
     private JudgeServer server;
     private WebView web;
     private String origin;
@@ -37,6 +38,7 @@ public class MainActivity extends Activity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        updater = new AppUpdater(this);
         Window window = getWindow();
         window.setStatusBarColor(BG);
         window.setNavigationBarColor(BG);
@@ -69,6 +71,17 @@ public class MainActivity extends Activity {
         });
         setContentView(web);
         web.loadUrl("http://127.0.0.1:" + server.port() + "/");
+        updater.startIfEnabled();
+    }
+
+    public boolean homeForUpdate() {
+        final java.util.concurrent.CountDownLatch done=new java.util.concurrent.CountDownLatch(1);final boolean[] home={false};
+        runOnUiThread(() -> {if(web==null){done.countDown();return;}web.evaluateJavascript("Boolean(document.querySelector('#training'))", value -> {home[0]="true".equals(value);done.countDown();});});
+        try {done.await(2,java.util.concurrent.TimeUnit.SECONDS);}catch(InterruptedException e){Thread.currentThread().interrupt();}return home[0];
+    }
+    public void whenHome(Runnable update) {
+        if(web==null)return;
+        web.evaluateJavascript("Boolean(document.querySelector('#training'))", value -> {if("true".equals(value)) update.run();else getSharedPreferences(AppUpdater.PREF,0).edit().putString("status","Найдена новая версия. Установка отложена: открыт рабочий экран. Проверьте обновления после судейства.").apply();});
     }
 
     private byte[] readAsset(String path) throws IOException {
@@ -107,6 +120,7 @@ public class MainActivity extends Activity {
     }
 
     public final class ExportBridge {
+        @JavascriptInterface public void openUpdates() {runOnUiThread(() -> updater.show());}
         @JavascriptInterface public void exportTraining(String json) {
             if (json == null || json.length() > 2000000) return;
             runOnUiThread(() -> {
@@ -139,4 +153,4 @@ public class MainActivity extends Activity {
         if (web != null) web.destroy();
         super.onDestroy();
     }
-    }
+}
