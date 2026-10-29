@@ -32,3 +32,9 @@ Profile accepts a user-entered username and password only on an explicit submit.
 No real accounts were created during validation. Controlled tests cover201 receipt, duplicate names, bad replies, uncertain failure, redirect rejection and all other writes remaining gated. A timeout or ambiguous response must not be automatically retried. Login/session/me and authenticated role verification remain unimplemented; public OpenAPI advertises login and user lookup without a session/token contract. Receipt ID is not authority to show private organizer data.
 
 Profile action buttons have a14px vertical gap. Existing scoring behavior and unsent storage keys remain unchanged. Android runtime/install/upgrade are not verified for this build.
+
+
+## Login in 0.7.1
+Explicit Profile login POST /auth/login uses the same origin/Host/action/body/HTTPS and redirect guards, with login-account action. A200 response must contain exact id/username/role and no extra fields. Allowed role labels: athlete/judge/organizer; this is display-only data from the credential-check response. It is kept in memory only, reset on reload and never grants admin/scoring access.401 and server/network/malformed failures clear the password, show sanitized errors and never auto retry. Registration remains available and unchanged.
+
+The current deployed OpenAPI documents UserRegister -> UserResponse for login, without token, session or /me. Therefore no protected login session can be implemented against this contract. Backend still needs server-managed authenticated sessions, /me/current-role verification, expiry/logout, protected writes and route assignments. Public main.py fetched at review still did not include the login handler, so its implementation could not be independently inspected. No real credentials, logins or account creations were used for validation.
