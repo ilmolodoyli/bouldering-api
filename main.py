@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Depends, HTTPException, status # добавление эндпоинт удаление
 from sqlalchemy.orm import Session
+from passlib.context import CryptContext # добавил: сейф для паролей, чтобы никто не украл чистый текст
 import models
 import schemas
 from database import engine, SessionLocal
 models.Base.metadata.create_all(bind=engine)# эта команда при запуске сервера проверяет файл models.py и создает в PostgreSQL все таблицы, которых там еще нет.
 app = FastAPI(title="Bouldering Tournament API") # создаем само веб-приложение (сервер). То, что мы тут напишем, будет отображаться в заголовке Swagger-документации.
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto") # добавил: инструмент шифрования пароля
 def get_db(): # эта функция работает как "швейцар" для базы данных. 
     db = SessionLocal() 
     try:
@@ -26,7 +28,9 @@ def create_competitor(competitor: schemas.CompetitorCreate, db: Session = Depend
     db_competitor = models.Competitor(
         full_name=competitor.full_name,
         age=competitor.age,
-        category=competitor.category
+        category=competitor.category,
+        user_id=competitor.user_id,             # добавил: привязал человека к его аккаунту
+        tournament_id=competitor.tournament_id   # добавил: привязал к конкретному соревнованию
     )
     # добавляю объект в текущую транзакцию (готовим к отправке)
     db.add(db_competitor)
@@ -49,7 +53,8 @@ def read_competitors(skip: int=0, limit: int = 100, db: Session = Depends(get_db
 def create_route(route: schemas.RouteCreate, db: Session = Depends(get_db)):
     db_route = models.Route(
         difficulty=route.difficulty,
-        age_category=route.age_category
+        age_category=route.age_category,
+        tournament_id=route.tournament_id # добавил: трасса теперь знает к какому фестивалю относится
     )
     db.add(db_route)
     db.commit()
@@ -120,3 +125,54 @@ def delete_route(route_id: int, db: Session = Depends(get_db)):
     db.delete(route)
     db.commit()
     return None
+# --- регистрация и управление ролями ---
+# добавил: вход в систему, по умолчанию выдаем роль обычного спортсмена
+@app.post("/auth/register", response_model=schemas.UserResponse, status_code=status.HTTP_201_CREATED)
+def register(user: schemas.UserRegister, db: Session = Depends(get_db)):
+    # проверяем свободен ли никнейм
+    if db.query(models.User).filter(models.User.username == user.username).first():
+        raise HTTPException(status_code=400, detail="Логин уже занят")
+    # прячем пароль в хеш
+    hashed = pwd_context.hash(user.password)
+    db_user = models.User(username=user.username, password_hash=hashed, role=models.UserRole.ATHLETE)
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+    return db_user
+# добавил: просмотр всех зарегистрированных людей для организатора
+@app.get("/users/", response_model=list[schemas.UserResponse])
+def read_users(db: Session = Depends(get_db)):
+    return db.query(models.User).all()
+# добавил: организатор меняет роль (делает смотрящим или организатором)
+@app.patch("/users/{user_id}/role", response_model=schemas.UserResponse)
+def update_user_role(user_id: int, role_data: schemas.UserRoleUpdate, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    user.role = role_data.role
+    db.commit()
+    db.refresh(user)
+    return user
+# управление турнирами
+# добавил: создание нового турнира на скалодроме
+@app.post("/tournaments/", response_model=schemas.TournamentResponse, status_code=status.HTTP_201_CREATED)
+def create_tournament(tournament: schemas.TournamentCreate, db: Session = Depends(get_db)):
+    db_tourn = models.Tournament(title=tournament.title, stage=tournament.stage)
+    db.add(db_tourn)
+    db.commit()
+    db.refresh(db_tourn)
+    return db_tourn
+# добавил: список турниров (прошедшие, текущие и грядущие)
+@app.get("/tournaments/", response_model=list[schemas.TournamentResponse])
+def read_tournaments(db: Session = Depends(get_db)):
+    return db.query(models.Tournament).all()
+# добавил: переключение этапа соревнований с квалификации на финал
+@app.patch("/tournaments/{tournament_id}/stage", response_model=schemas.TournamentResponse)
+def update_tournament_stage(tournament_id: int, stage_data: schemas.TournamentUpdateStage, db: Session = Depends(get_db)):
+    tourn = db.query(models.Tournament).filter(models.Tournament.id == tournament_id).first()
+    if not tourn:
+        raise HTTPException(status_code=404, detail="Турнир не найден")
+    tourn.stage = stage_data.stage
+    db.commit()
+    db.refresh(tourn)
+    return tourn
