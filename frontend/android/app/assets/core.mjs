@@ -18,7 +18,7 @@ export const keyOf=r=>`${r.route_id}:${r.competitor_id}`;
 export function assertResponse(want,got){validate(got);for(const k of Object.keys(emptyResult(1,1)))if(got[k]!==want[k])throw Error('Сервер вернул другой результат. Нужна сверка');if(!Number.isSafeInteger(got.id)||got.id<1)throw Error('Нет id сохранённого результата');return got;}
 export class Api{
  constructor(base='/api'){this.base=base;}
- async request(path,options={}){const c=new AbortController(),t=setTimeout(()=>c.abort(),12000);try{const r=await fetch(this.base+path,{...options,signal:c.signal,headers:{'Content-Type':'application/json',...options.headers}});if(!r.ok)throw Error(`API: HTTP ${r.status}`);return await r.json();}finally{clearTimeout(t);}}
+ async request(path,options={}){const c=new AbortController(),t=setTimeout(()=>c.abort(),12000);try{const r=await fetch(this.base+path,{...options,signal:c.signal,headers:{'Content-Type':'application/json',...options.headers}});if(!r.ok)throw Error(`API: HTTP ${r.status}`);return r.status===204?null:await r.json();}finally{clearTimeout(t);}}
  async list(path){let rows=[];for(let skip=0;skip<10000;skip+=100){const batch=await this.request(`${path}?skip=${skip}&limit=100`);if(!Array.isArray(batch))throw Error('Неверный ответ списка');rows.push(...batch);if(batch.length<100)return rows;}throw Error('Слишком большой список');}
  async save(r){validate(r);return assertResponse(r,await this.request('/results/',{method:'POST',body:JSON.stringify(r)}));}
 }
