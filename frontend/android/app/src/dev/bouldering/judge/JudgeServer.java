@@ -126,6 +126,13 @@ public final class JudgeServer {
                     catch (NumberFormatException ignored) {}
                 }
             }
+            if ("DELETE".equals(method)) {
+                boolean competitor=target.matches("/api/competitors/[1-9][0-9]{0,9}"), route=target.matches("/api/routes/[1-9][0-9]{0,9}");
+                if ((!competitor && !route) || !(competitor?"delete-competitor":"delete-route").equals(registerHeader) || !("http://127.0.0.1:" + port()).equals(origin) || contentLength != 0) {
+                    respond(out,403,"text/plain","Deletion requires exact same-origin confirmed action",null);return;
+                }
+                deleteRecord(target.substring(4),out);return;
+            }
             if ("POST".equals(method) && (target.equals("/api/competitors/") || target.equals("/api/routes/"))) {
                 if (!(target.equals("/api/competitors/")?"register-competitor":"create-route").equals(registerHeader) || !("http://127.0.0.1:" + port()).equals(origin) || contentLength < 1 || contentLength > 8192) {
                     respond(out,403,"text/plain","Registration requires same-origin explicit action",null);return;
@@ -184,6 +191,19 @@ public final class JudgeServer {
         } catch (Exception e) {
             respond(out, 502, "text/plain; charset=utf-8", "Backend not reachable or invalid JSON", null);
         }
+    }
+
+    private void deleteRecord(String endpoint, OutputStream out) throws IOException {
+        HttpURLConnection conn=(HttpURLConnection)new URL(base+endpoint).openConnection();
+        conn.setInstanceFollowRedirects(false);conn.setRequestMethod("DELETE");
+        conn.setConnectTimeout(TIMEOUT_MS);conn.setReadTimeout(TIMEOUT_MS);conn.setRequestProperty("ngrok-skip-browser-warning","1");
+        try {
+            int code=conn.getResponseCode();
+            if(code==204) {respond(out,204,"application/json",new byte[0],"no-store");return;}
+            if(code==404) {respond(out,404,"text/plain","Record not found; refresh before any retry",null);return;}
+            respond(out,502,"text/plain","Deletion outcome unconfirmed; refresh list before any retry",null);
+        }catch(Exception e){respond(out,502,"text/plain","Deletion outcome unknown; refresh list before retry",null);}
+        finally{conn.disconnect();}
     }
 
     private void register(String endpoint, byte[] body, OutputStream out) throws IOException {
