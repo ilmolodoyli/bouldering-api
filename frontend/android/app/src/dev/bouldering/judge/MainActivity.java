@@ -52,6 +52,9 @@ public class MainActivity extends Activity {
         web = new WebView(this);
         web.setBackgroundColor(BG);
         web.getSettings().setJavaScriptEnabled(true);
+        web.getSettings().setSaveFormData(false);
+        web.getSettings().setSavePassword(false);
+        web.setImportantForAutofill(android.view.View.IMPORTANT_FOR_AUTOFILL_NO_EXCLUDE_DESCENDANTS);
         web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);
         web.getSettings().setAllowContentAccess(false);
@@ -147,10 +150,14 @@ public class MainActivity extends Activity {
         pendingExport = null;
     }
 
-    @Override
-    public void onDestroy() {
+    @Override public void onPause() {
+        if(web!=null)web.evaluateJavascript("document.querySelector('#register-form')?.reset()",null);
+        super.onPause();
+    }
+
+    @Override public void onDestroy() {
         if (server != null) server.close();
         if (web != null) web.destroy();
         super.onDestroy();
     }
-            }
+}
