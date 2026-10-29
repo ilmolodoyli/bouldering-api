@@ -151,7 +151,7 @@ public class MainActivity extends Activity {
     }
 
     @Override public void onPause() {
-        if(web!=null)web.evaluateJavascript("document.querySelector('#register-form')?.reset()",null);
+        if(web!=null)web.evaluateJavascript("document.querySelectorAll('#register-form,#login-form').forEach(f=>f.reset())",null);
         super.onPause();
     }
 
@@ -160,4 +160,4 @@ public class MainActivity extends Activity {
         if (web != null) web.destroy();
         super.onDestroy();
     }
-}
+                    }
