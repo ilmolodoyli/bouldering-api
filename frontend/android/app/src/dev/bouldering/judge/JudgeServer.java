@@ -23,8 +23,7 @@ import java.util.concurrent.Executors;
 
 /**
  * On-device port of serve.py: serves the bundled static app and proxies
- * the documented read-only API endpoints to the live backend. No live
- * writes and no credentials are accepted, exactly like the desktop server.
+ * the documented read-only API endpoints to the live backend. Only explicit account registration accepts credentials; score and admin writes remain gated.
  * Pure Java (no Android imports) so the same code is unit-tested on the JVM.
  */
 public final class JudgeServer {
@@ -116,15 +115,30 @@ public final class JudgeServer {
             int contentLength = 0;
             String registerHeader = "";
             String origin = null;
+            String host = null, contentType = null; boolean chunked = false, invalidLength = false; int headerBytes=0;
             String line;
             while ((line = readLine(in)) != null && !line.isEmpty()) {
+                headerBytes += line.length(); if(headerBytes>MAX_HEADER_BYTES)throw new IOException();
                 int colon = line.indexOf(':');
+                if(colon>0 && line.substring(0,colon).equalsIgnoreCase("Host"))host=line.substring(colon+1).trim();
+                if(colon>0 && line.substring(0,colon).equalsIgnoreCase("Content-Type"))contentType=line.substring(colon+1).trim();
+                if(colon>0 && line.substring(0,colon).equalsIgnoreCase("Transfer-Encoding"))chunked=true;
                 if (colon > 0 && line.substring(0,colon).equalsIgnoreCase("X-Judge-Action")) registerHeader = line.substring(colon+1).trim();
                 if (colon > 0 && line.substring(0,colon).equalsIgnoreCase("Origin")) origin = line.substring(colon+1).trim();
                 if (colon > 0 && line.substring(0, colon).trim().equalsIgnoreCase("Content-Length")) {
-                    try { contentLength = Integer.parseInt(line.substring(colon + 1).trim()); }
-                    catch (NumberFormatException ignored) {}
+                    try { if(contentLength!=0)invalidLength=true; contentLength = Integer.parseInt(line.substring(colon + 1).trim()); }
+                    catch (NumberFormatException ignored) {invalidLength=true;}
                 }
+            }
+            if ("POST".equals(method) && "/api/auth/register".equals(target)) {
+                if(!("127.0.0.1:"+port()).equals(host) || !("http://127.0.0.1:"+port()).equals(origin)
+                    || !"register-account".equals(registerHeader) || !"application/json".equals(contentType)
+                    || chunked || invalidLength || contentLength<2 || contentLength>2048) {
+                    respond(out,403,"application/json","{\"error\":\"registration_request_rejected\"}","no-store");return;
+                }
+                byte[] body=new byte[contentLength];
+                try {int pos=0,n;while(pos<body.length){n=in.read(body,pos,body.length-pos);if(n<0)throw new EOFException();pos+=n;}register(body,out);}
+                finally {java.util.Arrays.fill(body,(byte)0);}return;
             }
             if (!"GET".equals(method)) {respond(out,403,"text/plain","Server writes gated pending authenticated RBAC contract",null);return;}
             if (contentLength > 0) skipFully(in, Math.min(contentLength,8192));
@@ -199,6 +213,38 @@ public final class JudgeServer {
         } finally {
             conn.disconnect();
         }
+    }
+
+    private void register(byte[] body, OutputStream out) throws IOException {
+        HttpURLConnection conn=null;
+        try {
+            java.util.Map<String,Object> data=RegistrationJson.parse(new String(body,StandardCharsets.UTF_8));
+            if(data.size()!=2 || !(data.get("username") instanceof String) || !(data.get("password") instanceof String))throw new IOException();
+            String name=(String)data.get("username"),password=(String)data.get("password");
+            if(name.trim().isEmpty() || name.length()>80 || password.isEmpty() || password.getBytes(StandardCharsets.UTF_8).length>72) {
+                respond(out,400,"application/json","{\"error\":\"invalid_fields\"}","no-store");return;
+            }
+            URL url=new URL(base+"/auth/register");
+            if(!"https".equals(url.getProtocol()) && !("http".equals(url.getProtocol()) && "127.0.0.1".equals(url.getHost())))throw new IOException();
+            conn=(HttpURLConnection)url.openConnection();conn.setInstanceFollowRedirects(false);
+            conn.setConnectTimeout(TIMEOUT_MS);conn.setReadTimeout(TIMEOUT_MS);conn.setRequestMethod("POST");conn.setDoOutput(true);
+            conn.setRequestProperty("Content-Type","application/json");conn.setRequestProperty("Accept","application/json");
+            conn.setRequestProperty("ngrok-skip-browser-warning","1");conn.setFixedLengthStreamingMode(body.length);
+            try(OutputStream sent=conn.getOutputStream()){sent.write(body);}
+            int code=conn.getResponseCode();
+            if(code==400 || code==409) {respond(out,409,"application/json","{\"error\":\"name_conflict\"}","no-store");return;}
+            if(code!=201)throw new IOException();
+            byte[] answer;try(InputStream response=conn.getInputStream()){answer=readCapped(response,4097);}
+            if(answer.length>4096)throw new IOException();
+            java.util.Map<String,Object> receipt=RegistrationJson.parse(new String(answer,StandardCharsets.UTF_8));
+            Object id=receipt.get("id");
+            if(receipt.size()!=3 || !(id instanceof Long) || (Long)id<1 || (Long)id>9007199254740991L
+                || !name.equals(receipt.get("username")) || !"athlete".equals(receipt.get("role")))throw new IOException();
+            String clean="{\"id\":"+id+",\"username\":"+RegistrationJson.quote(name)+",\"role\":\"athlete\"}";
+            respond(out,201,"application/json",clean,"no-store");
+        } catch(Exception ignored) {
+            respond(out,502,"application/json","{\"error\":\"registration_unconfirmed_no_retry\"}","no-store");
+        } finally {if(conn!=null)conn.disconnect();}
     }
 
     private static String contentType(String path) {
