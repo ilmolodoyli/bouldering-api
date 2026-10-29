@@ -130,14 +130,14 @@ public final class JudgeServer {
                     catch (NumberFormatException ignored) {invalidLength=true;}
                 }
             }
-            if ("POST".equals(method) && "/api/auth/register".equals(target)) {
+            if ("POST".equals(method) && ("/api/auth/register".equals(target) || "/api/auth/login".equals(target))) {
                 if(!("127.0.0.1:"+port()).equals(host) || !("http://127.0.0.1:"+port()).equals(origin)
-                    || !"register-account".equals(registerHeader) || !"application/json".equals(contentType)
+                    || !(target.endsWith("/login")?"login-account":"register-account").equals(registerHeader) || !"application/json".equals(contentType)
                     || chunked || invalidLength || contentLength<2 || contentLength>2048) {
                     respond(out,403,"application/json","{\"error\":\"registration_request_rejected\"}","no-store");return;
                 }
                 byte[] body=new byte[contentLength];
-                try {int pos=0,n;while(pos<body.length){n=in.read(body,pos,body.length-pos);if(n<0)throw new EOFException();pos+=n;}register(body,out);}
+                try {int pos=0,n;while(pos<body.length){n=in.read(body,pos,body.length-pos);if(n<0)throw new EOFException();pos+=n;}register(body,out,target.endsWith("/login"));}
                 finally {java.util.Arrays.fill(body,(byte)0);}return;
             }
             if (!"GET".equals(method)) {respond(out,403,"text/plain","Server writes gated pending authenticated RBAC contract",null);return;}
@@ -215,7 +215,7 @@ public final class JudgeServer {
         }
     }
 
-    private void register(byte[] body, OutputStream out) throws IOException {
+    private void register(byte[] body, OutputStream out, boolean login) throws IOException {
         HttpURLConnection conn=null;
         try {
             java.util.Map<String,Object> data=RegistrationJson.parse(new String(body,StandardCharsets.UTF_8));
@@ -224,7 +224,7 @@ public final class JudgeServer {
             if(name.trim().isEmpty() || name.length()>80 || password.isEmpty() || password.getBytes(StandardCharsets.UTF_8).length>72) {
                 respond(out,400,"application/json","{\"error\":\"invalid_fields\"}","no-store");return;
             }
-            URL url=new URL(base+"/auth/register");
+            URL url=new URL(base+(login?"/auth/login":"/auth/register"));
             if(!"https".equals(url.getProtocol()) && !("http".equals(url.getProtocol()) && "127.0.0.1".equals(url.getHost())))throw new IOException();
             conn=(HttpURLConnection)url.openConnection();conn.setInstanceFollowRedirects(false);
             conn.setConnectTimeout(TIMEOUT_MS);conn.setReadTimeout(TIMEOUT_MS);conn.setRequestMethod("POST");conn.setDoOutput(true);
@@ -232,16 +232,17 @@ public final class JudgeServer {
             conn.setRequestProperty("ngrok-skip-browser-warning","1");conn.setFixedLengthStreamingMode(body.length);
             try(OutputStream sent=conn.getOutputStream()){sent.write(body);}
             int code=conn.getResponseCode();
-            if(code==400 || code==409) {respond(out,409,"application/json","{\"error\":\"name_conflict\"}","no-store");return;}
-            if(code!=201)throw new IOException();
+            if(login && (code==400 || code==401 || code==403 || code==404)){respond(out,401,"application/json","{\"error\":\"login_rejected\"}","no-store");return;}
+            if(!login && (code==400 || code==409)) {respond(out,409,"application/json","{\"error\":\"name_conflict\"}","no-store");return;}
+            if(code!=(login?200:201))throw new IOException();
             byte[] answer;try(InputStream response=conn.getInputStream()){answer=readCapped(response,4097);}
             if(answer.length>4096)throw new IOException();
             java.util.Map<String,Object> receipt=RegistrationJson.parse(new String(answer,StandardCharsets.UTF_8));
             Object id=receipt.get("id");
             if(receipt.size()!=3 || !(id instanceof Long) || (Long)id<1 || (Long)id>9007199254740991L
-                || !name.equals(receipt.get("username")) || !"athlete".equals(receipt.get("role")))throw new IOException();
-            String clean="{\"id\":"+id+",\"username\":"+RegistrationJson.quote(name)+",\"role\":\"athlete\"}";
-            respond(out,201,"application/json",clean,"no-store");
+                || !name.equals(receipt.get("username")) || !(login?java.util.Arrays.asList("athlete","judge","organizer").contains(receipt.get("role")):"athlete".equals(receipt.get("role"))))throw new IOException();
+            String clean="{\"id\":"+id+",\"username\":"+RegistrationJson.quote(name)+",\"role\":"+RegistrationJson.quote((String)receipt.get("role"))+"}";
+            respond(out,login?200:201,"application/json",clean,"no-store");
         } catch(Exception ignored) {
             respond(out,502,"application/json","{\"error\":\"registration_unconfirmed_no_retry\"}","no-store");
         } finally {if(conn!=null)conn.disconnect();}
@@ -435,4 +436,4 @@ public final class JudgeServer {
             }
         }
     }
-}
+            }
