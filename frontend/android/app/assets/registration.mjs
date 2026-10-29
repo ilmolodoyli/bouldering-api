@@ -1,0 +1,23 @@
+// Registration receipt is not authentication or a role grant.
+const KEY='judge_registration_receipt_v1',PENDING='judge_registration_pending_v1';let busy=false,message='',uncertain=false,receipt=null;
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const valid=r=>r&&Number.isSafeInteger(r.id)&&r.id>0&&typeof r.username==='string'&&r.username.length<=80&&r.role==='athlete';
+try{const r=JSON.parse(localStorage.getItem(KEY));if(valid(r))receipt={id:r.id,username:r.username,role:'athlete'};uncertain=!receipt&&localStorage.getItem(PENDING)==='1';}catch{}
+export function registrationUi(){return `<div id="registration">${receipt?`<section class="card"><h2>Аккаунт создан</h2><p>Имя: ${esc(receipt.username)}</p><p class="good" style="font-size:24px;font-weight:700">ID: ${receipt.id}</p><p>Роль при регистрации: Спортсмен</p><p class="sub">Передайте свой ID владельцу сервера, чтобы он назначил роль.</p></section><div class="notice">Это подтверждение создания аккаунта, не защищённая сессия. Управление и отправка оценок пока закрыты. Текущая роль не проверяется.</div>`:busy?'<section class="card"><h2>Создание аккаунта…</h2><p>Запрос отправлен. Не повторяйте регистрацию.</p></section>':uncertain?'<section class="card"><h2>Результат не подтверждён</h2><p>Сервер мог создать аккаунт. Уточните это у владельца сервера. Автоматического повтора нет; повторную регистрацию здесь не запускаем.</p><p class="sub">Пароль очищен. Сверка аккаунта через защищённый вход пока недоступна.</p></section>':`<section class="card"><h2>Создать аккаунт</h2><p class="sub">Данные отправятся на сервер турнира. Регистрация создаст ID с ролью спортсмена.</p><form id="register-form" autocomplete="off"><label>Имя / логин<input name="username" autocomplete="off" maxlength="80" required placeholder="Как вас зовут" autocapitalize="off" spellcheck="false"></label><label>Пароль<input name="password" type="password" autocomplete="off" required placeholder="Введите пароль"></label><p class="sub">Пароль не сохраняется в приложении и не входит в экспорт истории. Не используйте пароль от почты или других сервисов. Максимум 72 байта UTF-8.</p><p class="error" role="alert">${esc(message)}</p><button class="primary full">Зарегистрироваться</button></form></section><p class="sub">Создание аккаунта не подтверждает права организатора. Назначение роли выполняет владелец сервера.</p>`}${receipt&&message?`<p class="notice">${esc(message)}</p>`:''}</div>`;}
+export function bindRegistration(){document.querySelector('#register-form')?.addEventListener('submit',async e=>{
+ e.preventDefault();if(busy||receipt||uncertain)return;const f=e.target;let username=f.elements.username.value.trim(),password=f.elements.password.value;
+ if(!username||username.length>80||!password||new TextEncoder().encode(password).length>72){message='Введите имя и пароль длиной не более 72 байт UTF-8.';f.elements.password.value='';password='';redraw();return;}
+ try{localStorage.setItem(PENDING,'1');}catch{message='Не удалось сохранить защиту от повторной отправки. Регистрация не отправлена.';f.reset();password='';redraw();return;}
+ let body=JSON.stringify({username,password});f.reset();password='';busy=true;message='';redraw();
+ const c=new AbortController(),t=setTimeout(()=>c.abort(),15000);
+ try{const pending=fetch('/api/auth/register',{method:'POST',headers:{'Content-Type':'application/json','X-Judge-Action':'register-account'},body,signal:c.signal,cache:'no-store',redirect:'error'});body='';const r=await pending;
+  if(r.status===409){localStorage.removeItem(PENDING);message='Имя уже занято. Аккаунт не создан повторно. Если это ваше имя, уточните ID у владельца сервера.';return;}
+  if(r.status===400){localStorage.removeItem(PENDING);message='Проверьте имя и длину пароля.';return;}
+  if(r.status!==201)throw Error();const data=await r.json();if(!valid(data)||data.username!==username||Object.keys(data).sort().join(',')!=='id,role,username')throw Error();
+  receipt={id:data.id,username:data.username,role:'athlete'};
+  try{localStorage.setItem(KEY,JSON.stringify(receipt));localStorage.removeItem(PENDING);}catch{message='ID не удалось сохранить на устройстве. Запишите его сейчас.';}
+ }catch{uncertain=true;}finally{body='';username='';password='';clearTimeout(t);busy=false;redraw();}
+ });}
+function redraw(){const old=document.querySelector('#registration');if(old){old.outerHTML=registrationUi();bindRegistration();}}
+const clear=()=>{const f=document.querySelector('#register-form');if(f)f.reset();};
+addEventListener('pagehide',clear);document.addEventListener('visibilitychange',()=>{if(document.hidden)clear();});
