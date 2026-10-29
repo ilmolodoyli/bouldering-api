@@ -1,6 +1,6 @@
-# Судейское Android-приложение 0.4.0
+# Судейское Android-приложение 0.5.0
 
-HTML/CSS/JS внутри WebView, Java loopback-сервер127.0.0.1:8781 на самом устройстве. Компьютер для запуска не нужен. Пакет dev.bouldering.judge/versionCode5, minSdk26/targetSdk34.
+HTML/CSS/JS внутри WebView, Java loopback-сервер127.0.0.1:8781 на самом устройстве. Компьютер для запуска не нужен. Пакет dev.bouldering.judge/versionCode6, minSdk26/targetSdk34.
 
 ## Что работает в этой итерации
 - Имя судьи локальное, НЕ защищённая авторизация.
@@ -41,3 +41,13 @@ BUILD_TOOLS=/path/build-tools/34 PLATFORM=/path/platforms/android-34/android.jar
 https://developer.android.com/reference/android/content/pm/PackageInstaller.SessionParams
 https://developer.android.com/google/play/app-updates
 https://docs.github.com/en/rest/releases/releases
+
+## 0.5.0: DB-тренировка и удаление
+
+Вымышленный тренировочный список убран из интерфейса. Кнопка тренировки открывает участников и трассы настоящей БД. API не помечает, какой клиент создал запись, поэтому используются все участники этой БД. Счёт по-прежнему локальный, не синхронизируется. Старый bouldering_training_v3 не удаляется, доступен только экспорт архива.
+
+DELETE /competitors/{id} и /routes/{id} появились в live OpenAPI29Oct14:31PKT. Подтверждение перечисляет точную запись и предупреждает об удалении связанных серверных результатов. До отправки перечитывается запись; изменение данных отменяет запрос и требует нового просмотра. После204 проверяется отсутствие записи через GET. Сбой/неизвестный исход не считается успехом, автоповторов нет. Локальная история не очищается. PUT/PATCH по-прежнему нет.
+
+В опубликованном main.py на момент проверки handler трассы содержит .folter вместо .filter. Изолированное исполнение с контролируемой DB подтвердило AttributeError до удаления. Backend не меняли, live DELETE не тестировали. Кнопка трассы подключена, но ошибка показывается честно.
+
+Контролируемый UI test: demo entry отсутствует, архив сохраняется/экспортируется, DB fall/top2/2/2, cancel0/changed-record0DELETE, participant204+GET, route500безуспеха/повторзаблокирован и fixture204+GET. Native proxy fixture проверяет same-origin/action/method/path. Новая native0.5.0 на телефоне пока не проверена; настоящий end-to-end updater/data continuity также не подтверждён.
