@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException, status # добавление эндпоинт удаление
 from sqlalchemy.orm import Session
 import models
 import schemas
@@ -94,3 +94,29 @@ def save_result(result: schemas.ResultCreate, db: Session = Depends(get_db)):
     db.refresh(db_result)
     # возвращаем обновленный результат фронтенду, чтобы интерфейс судьи знал, что всё ОК
     return db_result
+# удаление участников : Апгрейд
+@app.delete("/competitors/{competitor_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_competitor(competitor_id: int, db: Session = Depends(get_db)):
+    competitor = db.query(models.Competitor).filter(models.Competitor.id == competitor_id).first()
+    if not competitor:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail = f"Участник с id {competitor_id} не найден"
+        )
+    db.query(models.Result).filter(models.Result.competitor_id == competitor_id).delete()
+    db.delete(competitor)
+    db.commit()
+    return None
+# удаление трассы 
+@app.delete("/routes/{route_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_route(route_id: int, db: Session = Depends(get_db)):
+    route = db.query(models.Route).folter(models.Route.id == route_id).first()
+    if not route:
+        raise HTTPException(
+            status_code = status.HTTP_404_NOT_FOUND,
+            detail = f"Трасса с id {route_id} не найдена"
+        )
+    db.query(models.Result).filter(models.Result.route_id == route_id).delete()
+    db.delete(route)
+    db.commit()
+    return None

@@ -35,11 +35,11 @@ class ResultCreate(BaseModel):
     total_attempt: int = 0
     zone_attempt: Optional[int] = None
     top_attempt: Optional[int] = None
-    @model_validator(mode='after')
+    @model_validator(mode='after') # добавлена автоподстановка зоны при взятии топа
     def auto_fill_zone_if_top_reached(self):
         if self.top_attempt and self.top_attempt > 0:
             if not self.zone_attempt or self.zone_attempt == 0:
-                self.zone_attempt or self.zone_attempt
+                self.zone_attempt = self.zone_attempt
         return self
 # отдаю сохраненный результат обратно, чтобы фронт понял, что всё записалось
 class ResultResponse(ResultCreate):
