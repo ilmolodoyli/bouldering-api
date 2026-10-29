@@ -36,7 +36,7 @@ public final class JudgeServer {
     public static final String DEFAULT_BASE = "https://agile-sandbag-viewless.ngrok-free.dev";
     public static final int PREFERRED_PORT = 8781;
     private static final Set<String> READ_ENDPOINTS =
-            new HashSet<>(Arrays.asList("/routes/", "/competitors/", "/results/", "/openapi.json"));
+            new HashSet<>(Arrays.asList("/routes/", "/competitors/", "/results/", "/tournaments/", "/openapi.json"));
     private static final int MAX_API_BYTES = 2_000_000;
     private static final int TIMEOUT_MS = 12_000;
     private static final int MAX_HEADER_BYTES = 16_384;
@@ -126,22 +126,7 @@ public final class JudgeServer {
                     catch (NumberFormatException ignored) {}
                 }
             }
-            if ("DELETE".equals(method)) {
-                boolean competitor=target.matches("/api/competitors/[1-9][0-9]{0,9}"), route=target.matches("/api/routes/[1-9][0-9]{0,9}");
-                if ((!competitor && !route) || !(competitor?"delete-competitor":"delete-route").equals(registerHeader) || !("http://127.0.0.1:" + port()).equals(origin) || contentLength != 0) {
-                    respond(out,403,"text/plain","Deletion requires exact same-origin confirmed action",null);return;
-                }
-                deleteRecord(target.substring(4),out);return;
-            }
-            if ("POST".equals(method) && (target.equals("/api/competitors/") || target.equals("/api/routes/"))) {
-                if (!(target.equals("/api/competitors/")?"register-competitor":"create-route").equals(registerHeader) || !("http://127.0.0.1:" + port()).equals(origin) || contentLength < 1 || contentLength > 8192) {
-                    respond(out,403,"text/plain","Registration requires same-origin explicit action",null);return;
-                }
-                byte[] body = new byte[contentLength]; int read=0;
-                while(read<contentLength){int n=in.read(body,read,contentLength-read);if(n<0)throw new EOFException();read+=n;}
-                if(!JsonCheck.isValid(new String(body,StandardCharsets.UTF_8))){respond(out,400,"text/plain","Invalid JSON",null);return;}
-                register(target.substring(4),body,out);return;
-            }
+            if (!"GET".equals(method)) {respond(out,403,"text/plain","Server writes gated pending authenticated RBAC contract",null);return;}
             if (contentLength > 0) skipFully(in, Math.min(contentLength,8192));
             handle(method, target, out);
         } catch (IOException ignored) {
@@ -191,37 +176,6 @@ public final class JudgeServer {
         } catch (Exception e) {
             respond(out, 502, "text/plain; charset=utf-8", "Backend not reachable or invalid JSON", null);
         }
-    }
-
-    private void deleteRecord(String endpoint, OutputStream out) throws IOException {
-        HttpURLConnection conn=(HttpURLConnection)new URL(base+endpoint).openConnection();
-        conn.setInstanceFollowRedirects(false);conn.setRequestMethod("DELETE");
-        conn.setConnectTimeout(TIMEOUT_MS);conn.setReadTimeout(TIMEOUT_MS);conn.setRequestProperty("ngrok-skip-browser-warning","1");
-        try {
-            int code=conn.getResponseCode();
-            if(code==204) {respond(out,204,"application/json",new byte[0],"no-store");return;}
-            if(code==404) {respond(out,404,"text/plain","Record not found; refresh before any retry",null);return;}
-            respond(out,502,"text/plain","Deletion outcome unconfirmed; refresh list before any retry",null);
-        }catch(Exception e){respond(out,502,"text/plain","Deletion outcome unknown; refresh list before retry",null);}
-        finally{conn.disconnect();}
-    }
-
-    private void register(String endpoint, byte[] body, OutputStream out) throws IOException {
-        HttpURLConnection conn = (HttpURLConnection)new URL(base+endpoint).openConnection();
-        conn.setInstanceFollowRedirects(false);
-        conn.setRequestMethod("POST");conn.setDoOutput(true);
-        conn.setConnectTimeout(TIMEOUT_MS);conn.setReadTimeout(TIMEOUT_MS);
-        conn.setRequestProperty("Content-Type","application/json");
-        conn.setRequestProperty("ngrok-skip-browser-warning","1");
-        try {
-            try(OutputStream stream=conn.getOutputStream()){stream.write(body);}
-            int code=conn.getResponseCode();
-            InputStream stream=code>=400?conn.getErrorStream():conn.getInputStream();
-            byte[] data=stream==null?new byte[0]:readCapped(stream,MAX_API_BYTES+1);
-            if(code<200||code>=300||data.length>MAX_API_BYTES||!JsonCheck.isValid(new String(data,StandardCharsets.UTF_8)))throw new IOException();
-            respond(out,200,"application/json",data,"no-store");
-        }catch(Exception e){respond(out,502,"text/plain","Registration outcome unknown; refresh list before retry",null);}
-        finally{conn.disconnect();}
     }
 
     private byte[] fetchApi(String pathAndQuery) throws IOException {
@@ -435,4 +389,4 @@ public final class JudgeServer {
             }
         }
     }
-    }
+}
