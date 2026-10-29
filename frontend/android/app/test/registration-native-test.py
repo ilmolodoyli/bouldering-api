@@ -6,8 +6,9 @@ class H(BaseHTTPRequestHandler):
  def do_POST(self):
   data=json.loads(self.rfile.read(int(self.headers['Content-Length'])));calls.append(self.path);assert set(data)=={'username','password'}
   if mode=='redirect':self.send_response(307);self.send_header('Location','http://127.0.0.1:1/leak');self.end_headers();return
+  if mode=='login-reject':self.send_response(401);self.end_headers();self.wfile.write(b'private echo');return
   if mode=='conflict':self.send_response(400);self.end_headers();self.wfile.write(b'{"detail":"private echo must never pass"}');return
-  self.send_response(201);self.end_headers();self.wfile.write(json.dumps({'id':42,'username':data['username'],'role':'organizer' if mode=='role' else 'athlete'}).encode())
+  self.send_response(200 if self.path.endswith('/login') else 201);self.end_headers();self.wfile.write(json.dumps({'id':42,'username':data['username'],'role':'organizer' if mode=='role' else 'athlete'}).encode())
  def log_message(self,*a):pass
 h=HTTPServer(('127.0.0.1',0),H);threading.Thread(target=h.serve_forever,daemon=True).start()
 p=subprocess.Popen(['sdk/jdk17/bin/java','-cp','build/expansion-jvm','Serve','verified-public/frontend/android/app/assets','http://127.0.0.1:'+str(h.server_port)],stdout=subprocess.PIPE);assert b'SERVING' in p.stdout.readline()
@@ -23,5 +24,7 @@ try:
  assert len(calls)==n
  for m,want in [('conflict',409),('redirect',502),('role',502)]:
   mode=m;code,out,cache=req();assert code==want and b'private echo' not in out and b'password' not in out and cache=='no-store'
- print('PASS native registration: explicit201 receipt; origin/host/action/type/path/payload/duplicates guards; conflict sanitized; redirect and role mismatch rejected; other writes/users remain403; controlled backend only')
+ mode='role';code,out,cache=req(path='/api/auth/login',headers={**base,'X-Judge-Action':'login-account'});assert code==200 and json.loads(out)['role']=='organizer'
+ mode='login-reject';code,out,cache=req(path='/api/auth/login',headers={**base,'X-Judge-Action':'login-account'});assert code==401 and b'private echo' not in out
+ print('PASS native login200 role display, login401 sanitized; registration: explicit201 receipt; origin/host/action/type/path/payload/duplicates guards; conflict sanitized; redirect and role mismatch rejected; other writes/users remain403; controlled backend only')
 finally:p.terminate();p.wait();h.shutdown()
