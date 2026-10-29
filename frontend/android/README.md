@@ -1,4 +1,4 @@
-# Судейское Android-приложение 0.6.0 (тест)
+# Судейское Android-приложение 0.7.0 (тест)
 
 Одобренная навигация: Турниры, Судейство, Чат, Управление, Профиль. Это тестовый каркас, не полноценное соревнование. Серверная роль неизвестна: нет authenticated session/me, поэтому пять разделов показаны с явными ограничениями, а не выдуманным локальнымRBAC.
 
@@ -24,3 +24,11 @@ Source: https://agile-sandbag-viewless.ngrok-free.dev/openapi.json
 https://raw.githubusercontent.com/ilmolodoyli/bouldering-api/main/main.py
 
 Android8+/min26,target34,versionCode7. Ключ подписи не в исходниках; отдельный private backup.
+
+
+## Registration in 0.7
+Profile accepts a user-entered username and password only on an explicit submit. The native proxy permits exactly POST /auth/register with same-origin, Host, action header, content type, payload and destination guards. HTTPS is required outside the loopback controlled fixture; redirects are rejected. Response201 must contain the exact positive ID, matching username and initial athlete role. Only ID/username/initial role are stored as a receipt, never as authentication. Password is not stored, exported or logged; fields clear on submit, tab leave and background. WebView form saving/autofill are disabled. Password length is capped at 72 UTF-8 bytes for the published bcrypt registration handler.
+
+No real accounts were created during validation. Controlled tests cover201 receipt, duplicate names, bad replies, uncertain failure, redirect rejection and all other writes remaining gated. A timeout or ambiguous response must not be automatically retried. Login/session/me and authenticated role verification remain unimplemented; public OpenAPI advertises login and user lookup without a session/token contract. Receipt ID is not authority to show private organizer data.
+
+Profile action buttons have a14px vertical gap. Existing scoring behavior and unsent storage keys remain unchanged. Android runtime/install/upgrade are not verified for this build.
