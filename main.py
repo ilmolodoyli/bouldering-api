@@ -110,7 +110,7 @@ def delete_competitor(competitor_id: int, db: Session = Depends(get_db)):
 # удаление трассы 
 @app.delete("/routes/{route_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_route(route_id: int, db: Session = Depends(get_db)):
-    route = db.query(models.Route).folter(models.Route.id == route_id).first()
+    route = db.query(models.Route).filter(models.Route.id == route_id).first()
     if not route:
         raise HTTPException(
             status_code = status.HTTP_404_NOT_FOUND,
